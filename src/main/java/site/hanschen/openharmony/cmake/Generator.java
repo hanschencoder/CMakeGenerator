@@ -130,7 +130,7 @@ public class Generator {
             if (!file.getName().endsWith(".ninja")) {
                 return;
             }
-            Log.println("process: " + file.getCanonicalPath());
+            Log.println("Process: " + file.getCanonicalPath());
 
             String relativize = relative(ninjaRoot, file);
             File CMakeLists = new File(cmakeRoot, relativize + "/CMakeLists.txt");
@@ -166,7 +166,12 @@ public class Generator {
                 StringTokenizer st = new StringTokenizer(include);
                 while (st.hasMoreTokens()) {
                     File header = new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + st.nextToken().replaceFirst("-I", ""));
-                    cmakeBuilder.append("    \"").append(header.getCanonicalPath()).append("\"\n");
+                    if (header.exists()) {
+                        cmakeBuilder.append("    \"").append(header.getCanonicalPath()).append("\"\n");
+                    } else {
+                        cmakeBuilder.append("#   \"").append(header.getCanonicalPath()).append("\"\n");
+                        Log.println("Ignored includeDir: " + header.getCanonicalPath(), Log.YELLOW);
+                    }
                 }
                 cmakeBuilder.append(")\n");
             }
@@ -231,7 +236,12 @@ public class Generator {
                 String src = st.nextToken();
                 if (src.endsWith(".cpp") || src.endsWith(".c")) {
                     File srcFile = new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + src);
-                    builder.append("    ").append(srcFile.getCanonicalPath()).append("\n");
+                    if (srcFile.exists()) {
+                        builder.append("    ").append(srcFile.getCanonicalPath()).append("\n");
+                    } else {
+                        builder.append("#   ").append(srcFile.getCanonicalPath()).append("\n");
+                        Log.println("Ignored srcFile: " + srcFile.getCanonicalPath(), Log.YELLOW);
+                    }
                 }
             }
         }
