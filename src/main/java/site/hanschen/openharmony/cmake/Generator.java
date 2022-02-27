@@ -32,45 +32,144 @@ public class Generator {
         }
         deleteExclude(cmakeDir, file -> file.getName().equals(".idea"));
 
-        final Map<String, StringBuilder> cmakeBuilders = new LinkedHashMap<>();
-        StringBuilderGetter stringBuilderGetter = path -> {
-            StringBuilder builder = cmakeBuilders.get(path);
-            if (builder == null) {
-                builder = new StringBuilder();
-                cmakeBuilders.put(path, builder);
-            }
-            return builder;
-        };
-        forAllFile(ninjaRoot, new NinjaToCmakeHandler(ninjaRoot, cmakeDir, stringBuilderGetter));
+        NinjaToCmakeHandler handler = new NinjaToCmakeHandler(ninjaRoot, cmakeDir);
+        forAllFile(ninjaRoot, handler);
+
 
         String cPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang").getAbsolutePath();
         String cppPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang++").getAbsolutePath();
         String head = "# THIS FILE WAS AUTOMATICALY GENERATED, DO NOT MODIFY!\n" + "cmake_minimum_required(VERSION 3.6)\n";
-        for (Map.Entry<String, StringBuilder> entry : cmakeBuilders.entrySet()) {
-            File file = new File(entry.getKey());
-            FileUtils.forceMkdirParent(file);
+        for (Map.Entry<String, List<NinjaEntry>> entry : handler.getAllNinja().entrySet()) {
+
+            File CMakeLists = new File(entry.getKey());
+            FileUtils.forceMkdirParent(CMakeLists);
             StringBuilder stringBuilder = new StringBuilder();
             stringBuilder.append(head);
-            String projectName = file.getParentFile().getName() + "-" + Integer.toHexString(entry.getKey().hashCode());
+            String projectName = CMakeLists.getParentFile().getName() + "-" + Integer.toHexString(entry.getKey().hashCode());
             stringBuilder.append("project(").append(projectName).append(")\n\n");
             stringBuilder.append(String.format("set(CMAKE_C_COMPILER \"%s\")\n", cPath));
             stringBuilder.append(String.format("set(CMAKE_CXX_COMPILER \"%s\")\n\n", cppPath));
 
-            stringBuilder.append(entry.getValue().toString());
+            for (NinjaEntry ninjaEntry : entry.getValue()) {
+                stringBuilder.append("\n# CMakeLists rule for: ").append(ninjaEntry.ninjaFile.getCanonicalPath()).append("\n");
+
+                // src
+                stringBuilder.append("\n# src: \nlist(APPEND\n    SOURCE_FILES\n");
+                for (File src : ninjaEntry.srcFiles) {
+                    if (src.exists()) {
+                        stringBuilder.append("    ").append(src.getCanonicalPath()).append("\n");
+                    } else {
+                        stringBuilder.append("#   ").append(src.getCanonicalPath()).append("\n");
+                    }
+                }
+                stringBuilder.append(")\n");
+
+                // include
+                if (ninjaEntry.includeDirs != null) {
+                    stringBuilder.append("\n# include:\n# ").append(ninjaEntry.includeDirs).append("\n");
+                    stringBuilder.append("include_directories(\n");
+                    StringTokenizer st = new StringTokenizer(ninjaEntry.includeDirs);
+                    while (st.hasMoreTokens()) {
+                        File header = new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + st.nextToken().replaceFirst("-I", ""));
+                        if (header.exists()) {
+                            stringBuilder.append("    \"").append(header.getCanonicalPath()).append("\"\n");
+                        } else {
+                            stringBuilder.append("#   \"").append(header.getCanonicalPath()).append("\"\n");
+                        }
+                    }
+                    stringBuilder.append(")\n");
+                }
+
+                // define
+                if (ninjaEntry.defines != null) {
+                    addFlags(stringBuilder, "defines", ninjaEntry.defines, true);
+                }
+
+                // cflags
+                if (ninjaEntry.cflags != null) {
+                    addFlags(stringBuilder, "cflags", ninjaEntry.cflags, false);
+                }
+
+                // cflags
+                if (ninjaEntry.ccflags != null) {
+                    addFlags(stringBuilder, "cflags_cc", ninjaEntry.ccflags, false);
+                }
+            }
+
             stringBuilder.append(String.format("\nadd_executable(%s ${SOURCE_FILES})\n", projectName));
-            FileUtils.writeStringToFile(file, stringBuilder.toString(), StandardCharsets.UTF_8);
+            FileUtils.writeStringToFile(CMakeLists, stringBuilder.toString(), StandardCharsets.UTF_8);
+        }
+
+        List<String> noSrcCMakeList = new ArrayList<>();
+        List<String> testCMakeList = new ArrayList<>();
+        List<String> normalCMakeList = new ArrayList<>();
+        for (Map.Entry<String, List<NinjaEntry>> entry : handler.getAllNinja().entrySet()) {
+
+            File CMakeLists = new File(entry.getKey());
+            String relative = relative(cmakeDir, CMakeLists);
+
+            int srcFileCount = 0;
+            for (NinjaEntry ninjaEntry : entry.getValue()) {
+                for (File f : ninjaEntry.srcFiles) {
+                    if (f.exists()) {
+                        srcFileCount++;
+                    }
+                }
+            }
+            if (srcFileCount == 0) {
+                noSrcCMakeList.add(relative);
+            } else if (CMakeLists.getParentFile().getName().endsWith("_test")) {
+                testCMakeList.add(relative);
+            } else {
+                normalCMakeList.add(relative);
+            }
         }
 
         StringBuilder rootCmakeList = new StringBuilder();
         rootCmakeList.append("cmake_minimum_required(VERSION 3.6)\n" + "project(OpenHarmony)\n\n");
-        for (Map.Entry<String, StringBuilder> entry : cmakeBuilders.entrySet()) {
-            File file = new File(entry.getKey());
-            String relative = relative(cmakeDir, file);
-            rootCmakeList.append(String.format("# add_subdirectory(%s)\n", relative));
+        for (String path : normalCMakeList) {
+            rootCmakeList.append(String.format("# add_subdirectory(%s)\n", path));
+        }
+        rootCmakeList.append("\n# test module\n");
+        for (String path : testCMakeList) {
+            rootCmakeList.append(String.format("# add_subdirectory(%s)\n", path));
+        }
+        rootCmakeList.append("\n# no src module\n");
+        for (String path : noSrcCMakeList) {
+            rootCmakeList.append(String.format("# add_subdirectory(%s)\n", path));
         }
         FileUtils.writeStringToFile(new File(cmakeDir, "CMakeLists.txt"), rootCmakeList.toString(), StandardCharsets.UTF_8);
 
         Log.println("\nSuccessful : " + cmakeDir.getCanonicalPath(), Log.GREEN);
+    }
+
+    private void addFlags(StringBuilder builder, String name, String line, boolean enable) {
+        line = line.replace("\\$ =\\$ ", "=");
+        builder.append("\n# ").append(name).append(":\n# ").append(line).append("\n");
+        StringTokenizer st = new StringTokenizer(line);
+        String[] defineArray = new String[st.countTokens()];
+        for (int i = 0; st.hasMoreTokens(); i++) {
+            defineArray[i] = st.nextToken();
+        }
+        for (String d : defineArray) {
+            String content = String.format("set(CMAKE_C_FLAGS \"${CMAKE_C_FLAGS} %s\")\n", d);
+            if (!enable) {
+                content = "# " + content;
+            }
+            if (!builder.toString().contains(content)) {
+                builder.append(content);
+            }
+
+        }
+        for (String d : defineArray) {
+            String content = String.format("set(CMAKE_CXX_FLAGS \"${CMAKE_CXX_FLAGS} %s\")\n", d);
+            if (!enable) {
+                content = "# " + content;
+            }
+            if (!builder.toString().contains(content)) {
+                builder.append(content);
+            }
+        }
     }
 
     private void deleteExclude(File file, FileFilter fileFilter) throws IOException {
@@ -99,22 +198,16 @@ public class Generator {
         return Paths.get(base.getCanonicalPath()).relativize(Paths.get(target.getParentFile().getCanonicalPath())).toString();
     }
 
-    private interface StringBuilderGetter {
-
-        StringBuilder get(String path);
-    }
-
     private static class NinjaToCmakeHandler implements FileHandler {
 
         private final List<LineParser> parsers = new ArrayList<>();
         private final File ninjaRoot;
-        private final StringBuilderGetter stringBuilderGetter;
         private final File cmakeRoot;
+        private final Map<String, List<NinjaEntry>> allNinja = new LinkedHashMap<>();
 
-        public NinjaToCmakeHandler(File ninjaRoot, File cmakeRoot, StringBuilderGetter stringBuilderGetter) {
+        public NinjaToCmakeHandler(File ninjaRoot, File cmakeRoot) {
             this.ninjaRoot = ninjaRoot;
             this.cmakeRoot = cmakeRoot;
-            this.stringBuilderGetter = stringBuilderGetter;
             parsers.add(new VariableParser("defines"));
             parsers.add(new VariableParser("include_dirs"));
             parsers.add(new VariableParser("cflags"));
@@ -123,6 +216,10 @@ public class Generator {
             parsers.add(new VariableParser("root_out_dir"));
             parsers.add(new VariableParser("target_output_name"));
             parsers.add(new BuildParser());
+        }
+
+        public Map<String, List<NinjaEntry>> getAllNinja() {
+            return allNinja;
         }
 
         @Override
@@ -134,9 +231,11 @@ public class Generator {
 
             String relativize = relative(ninjaRoot, file);
             File CMakeLists = new File(cmakeRoot, relativize + "/CMakeLists.txt");
-            FileUtils.forceMkdirParent(CMakeLists);
-
-            StringBuilder cmakeBuilder = stringBuilderGetter.get(CMakeLists.getCanonicalPath());
+            String key = CMakeLists.getCanonicalPath();
+            List<NinjaEntry> ninjas = allNinja.computeIfAbsent(key, k -> new ArrayList<>());
+            NinjaEntry entry = new NinjaEntry();
+            ninjas.add(entry);
+            entry.ninjaFile = file;
 
             Map<String, Object> result = new HashMap<>();
             BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8));
@@ -146,82 +245,36 @@ public class Generator {
             }
             reader.close();
 
-            cmakeBuilder.append("\n# CMakeLists rule for: ").append(file.getCanonicalPath()).append("\n");
-
             // src
             if (result.containsKey("build")) {
-                cmakeBuilder.append("\n# src: \nlist(APPEND\n    SOURCE_FILES\n");
                 @SuppressWarnings("unchecked") ArrayList<String> builds = (ArrayList<String>) result.get("build");
                 for (String b : builds) {
-                    addSourceFile(cmakeBuilder, b);
+                    addSourceFile(entry.srcFiles, b);
                 }
-                cmakeBuilder.append(")\n");
             }
 
             // include
             if (result.containsKey("include_dirs")) {
-                String include = (String) result.get("include_dirs");
-                cmakeBuilder.append("\n# include:\n# ").append(include).append("\n");
-                cmakeBuilder.append("include_directories(\n");
-                StringTokenizer st = new StringTokenizer(include);
-                while (st.hasMoreTokens()) {
-                    File header = new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + st.nextToken().replaceFirst("-I", ""));
-                    if (header.exists()) {
-                        cmakeBuilder.append("    \"").append(header.getCanonicalPath()).append("\"\n");
-                    } else {
-                        cmakeBuilder.append("#   \"").append(header.getCanonicalPath()).append("\"\n");
-                        Log.println("Ignored includeDir: " + header.getCanonicalPath(), Log.YELLOW);
-                    }
-                }
-                cmakeBuilder.append(")\n");
+                entry.includeDirs = (String) result.get("include_dirs");
             }
 
             // define
             if (result.containsKey("defines")) {
-                addFlags(cmakeBuilder, "defines", (String) result.get("defines"), true);
+                entry.defines = (String) result.get("defines");
             }
 
             // cflags
             if (result.containsKey("cflags")) {
-                addFlags(cmakeBuilder, "cflags", (String) result.get("cflags"), false);
+                entry.cflags = (String) result.get("cflags");
             }
 
             // cflags
             if (result.containsKey("cflags_cc")) {
-                addFlags(cmakeBuilder, "cflags_cc", (String) result.get("cflags_cc"), false);
+                entry.ccflags = (String) result.get("cflags_cc");
             }
         }
 
-        private void addFlags(StringBuilder builder, String name, String line, boolean enable) {
-            line = line.replace("\\$ =\\$ ", "=");
-            builder.append("\n# ").append(name).append(":\n# ").append(line).append("\n");
-            StringTokenizer st = new StringTokenizer(line);
-            String[] defineArray = new String[st.countTokens()];
-            for (int i = 0; st.hasMoreTokens(); i++) {
-                defineArray[i] = st.nextToken();
-            }
-            for (String d : defineArray) {
-                String content = String.format("set(CMAKE_C_FLAGS \"${CMAKE_C_FLAGS} %s\")\n", d);
-                if (!enable) {
-                    content = "# " + content;
-                }
-                if (!builder.toString().contains(content)) {
-                    builder.append(content);
-                }
-
-            }
-            for (String d : defineArray) {
-                String content = String.format("set(CMAKE_CXX_FLAGS \"${CMAKE_CXX_FLAGS} %s\")\n", d);
-                if (!enable) {
-                    content = "# " + content;
-                }
-                if (!builder.toString().contains(content)) {
-                    builder.append(content);
-                }
-            }
-        }
-
-        private void addSourceFile(StringBuilder builder, String build) throws IOException {
+        private void addSourceFile(List<File> srcFiles, String build) throws IOException {
             int index = build.indexOf(":");
             if (index < 0) {
                 return;
@@ -235,13 +288,7 @@ public class Generator {
             while (st.hasMoreTokens()) {
                 String src = st.nextToken();
                 if (src.endsWith(".cpp") || src.endsWith(".c")) {
-                    File srcFile = new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + src);
-                    if (srcFile.exists()) {
-                        builder.append("    ").append(srcFile.getCanonicalPath()).append("\n");
-                    } else {
-                        builder.append("#   ").append(srcFile.getCanonicalPath()).append("\n");
-                        Log.println("Ignored srcFile: " + srcFile.getCanonicalPath(), Log.YELLOW);
-                    }
+                    srcFiles.add(new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + src));
                 }
             }
         }
@@ -328,5 +375,18 @@ public class Generator {
         public String getName() {
             return name;
         }
+    }
+
+    private static class NinjaEntry {
+
+        private File ninjaFile;
+        private String defines;
+        private String includeDirs;
+        private String cflags;
+        private String ccflags;
+        private String label;
+        private String rootOutDir;
+        private String targetOutputName;
+        private final List<File> srcFiles = new ArrayList<>();
     }
 }
