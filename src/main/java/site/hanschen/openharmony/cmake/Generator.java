@@ -322,6 +322,7 @@ public class Generator {
         if (file.isDirectory()) {
             File[] children = file.listFiles();
             if (children != null) {
+                Arrays.sort(children, Comparator.comparing(File::getName));
                 for (File f : children) {
                     forAllFile(f, handler);
                 }
