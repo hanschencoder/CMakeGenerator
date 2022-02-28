@@ -18,8 +18,10 @@ public class Main {
         String sourceDir = commandLine.getOptionValue("sourceDir", "./");
         String cmakeDir = commandLine.getOptionValue("cmakeDir", sourceDir + "/cmake");
         String productName = commandLine.getOptionValue("productName");
+        String targetPlatform = commandLine.getOptionValue("targetPlatform", "linux");
+        String transformDir = commandLine.getOptionValue("transformDir");
         try {
-            Generator generator = new Generator(new File(sourceDir), new File(cmakeDir), productName);
+            Generator generator = new Generator(new File(sourceDir), new File(cmakeDir), productName, targetPlatform, transformDir);
             generator.generate();
         } catch (Exception e) {
             Log.println(e.toString(), Log.RED);
@@ -41,6 +43,14 @@ public class Main {
 
 
         opt = new Option("c", "cmakeDir", true, "Generate Dir");
+        opt.setRequired(false);
+        options.addOption(opt);
+
+        opt = new Option("targetPlatform", "targetPlatform", true, "Target Platform, [linux|windows]");
+        opt.setRequired(false);
+        options.addOption(opt);
+
+        opt = new Option("transformDir", "transformDir", true, "Change source base dir of CMakeLists.txt");
         opt.setRequired(false);
         options.addOption(opt);
 

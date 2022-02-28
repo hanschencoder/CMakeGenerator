@@ -13,11 +13,15 @@ public class Generator {
     private final File sourceDir;
     private final File cmakeDir;
     private final String productName;
+    private final String targetPlatform;
+    private final String transformDir;
 
-    public Generator(File sourceDir, File cmakeDir, String productName) {
+    public Generator(File sourceDir, File cmakeDir, String productName, String targetPlatform, String transformDir) {
         this.sourceDir = sourceDir;
         this.cmakeDir = cmakeDir;
         this.productName = productName;
+        this.targetPlatform = targetPlatform;
+        this.transformDir = transformDir;
     }
 
     public void generate() throws Exception {
@@ -37,8 +41,15 @@ public class Generator {
 
 
         Log.println("\nBuilding CMakeLists.txt...");
-        String cPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang").getAbsolutePath();
-        String cppPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang++").getAbsolutePath();
+        String cPath;
+        String cppPath;
+        if (targetPlatform.equals("windows")) {
+            cPath = new File(sourceDir, "prebuilts/clang/ohos/windows-x86_64/llvm/bin/clang").getAbsolutePath();
+            cppPath = new File(sourceDir, "prebuilts/clang/ohos/windows-x86_64/llvm/bin/clang++").getAbsolutePath();
+        } else {
+            cPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang").getAbsolutePath();
+            cppPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang++").getAbsolutePath();
+        }
         String head = "# THIS FILE WAS AUTOMATICALY GENERATED, DO NOT MODIFY!\n" + "cmake_minimum_required(VERSION 3.6)\n";
         for (Map.Entry<String, List<NinjaEntry>> entry : handler.getAllNinja().entrySet()) {
             File CMakeLists = new File(entry.getKey());
@@ -57,9 +68,9 @@ public class Generator {
                 stringBuilder.append("\n# src: \nlist(APPEND\n    SOURCE_FILES\n");
                 for (File src : ninjaEntry.srcFiles) {
                     if (src.exists()) {
-                        stringBuilder.append("    ").append(src.getCanonicalPath()).append("\n");
+                        stringBuilder.append("    ").append(transFormPath(src.getCanonicalPath())).append("\n");
                     } else {
-                        stringBuilder.append("#   ").append(src.getCanonicalPath()).append("\n");
+                        stringBuilder.append("#   ").append(transFormPath(src.getCanonicalPath())).append("\n");
                     }
                 }
                 stringBuilder.append(")\n");
@@ -72,9 +83,9 @@ public class Generator {
                     while (st.hasMoreTokens()) {
                         File header = new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + st.nextToken().replaceFirst("-I", ""));
                         if (header.exists()) {
-                            stringBuilder.append("    \"").append(header.getCanonicalPath()).append("\"\n");
+                            stringBuilder.append("    \"").append(transFormPath(header.getCanonicalPath())).append("\"\n");
                         } else {
-                            stringBuilder.append("#   \"").append(header.getCanonicalPath()).append("\"\n");
+                            stringBuilder.append("#   \"").append(transFormPath(header.getCanonicalPath())).append("\"\n");
                         }
                     }
                     stringBuilder.append(")\n");
@@ -146,6 +157,13 @@ public class Generator {
         FileUtils.writeStringToFile(new File(cmakeDir, "CMakeLists.txt"), rootCmakeList.toString(), StandardCharsets.UTF_8);
 
         Log.println("\nSuccessful : " + cmakeDir.getCanonicalPath(), Log.GREEN);
+    }
+
+    private String transFormPath(String from) throws IOException {
+        if (transformDir == null) {
+            return from;
+        }
+        return transformDir + from.substring(sourceDir.getCanonicalPath().length());
     }
 
     private void addFlags(StringBuilder builder, String name, String line, boolean enable) {
