@@ -36,11 +36,11 @@ public class Generator {
         forAllFile(ninjaRoot, handler);
 
 
+        Log.println("\nBuilding CMakeLists.txt...");
         String cPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang").getAbsolutePath();
         String cppPath = new File(sourceDir, "prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang++").getAbsolutePath();
         String head = "# THIS FILE WAS AUTOMATICALY GENERATED, DO NOT MODIFY!\n" + "cmake_minimum_required(VERSION 3.6)\n";
         for (Map.Entry<String, List<NinjaEntry>> entry : handler.getAllNinja().entrySet()) {
-
             File CMakeLists = new File(entry.getKey());
             FileUtils.forceMkdirParent(CMakeLists);
             StringBuilder stringBuilder = new StringBuilder();
@@ -118,7 +118,12 @@ public class Generator {
             }
             if (srcFileCount == 0) {
                 noSrcCMakeList.add(relative);
-            } else if (CMakeLists.getParentFile().getName().endsWith("_test")) {
+            } else if (CMakeLists.getParentFile().getName().endsWith("_test") ||
+                       CMakeLists.getParentFile().getName().endsWith("tests") ||
+                       CMakeLists.getParentFile().getName().endsWith("test") ||
+                       CMakeLists.getCanonicalPath().contains("/test/") ||
+                       CMakeLists.getCanonicalPath().contains("/tests/") ||
+                       CMakeLists.getCanonicalPath().contains("/unittest/")) {
                 testCMakeList.add(relative);
             } else {
                 normalCMakeList.add(relative);
