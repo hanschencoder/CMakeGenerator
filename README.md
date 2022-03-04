@@ -18,7 +18,7 @@
 
 # 3. 使用说明
 
-1. 下载工具：[CMakeGenerator](http://gitlab.meizu.com/chenhang/OH-CMakeGenerator/raw/master/distributions/CMakeGenerator-0.1.0.zip)，并进行解压
+1. 下载工具：[CMakeGenerator](./distributions/CMakeGenerator-0.1.0.zip)，并进行解压
 2. 对 `OpenHarmony` 进行编译
 3. 执行 `CMake` 生成命令：
 
