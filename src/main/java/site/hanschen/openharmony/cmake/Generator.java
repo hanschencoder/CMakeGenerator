@@ -144,7 +144,11 @@ public class Generator {
         StringBuilder rootCmakeList = new StringBuilder();
         rootCmakeList.append("cmake_minimum_required(VERSION 3.6)\n" + "project(OpenHarmony)\n\n");
         for (String path : normalCMakeList) {
-            rootCmakeList.append(String.format("# add_subdirectory(%s)\n", path));
+            if (path.contains("foundation/") || path.contains("base/startup")) {
+                rootCmakeList.append(String.format("add_subdirectory(%s)\n", path));
+            } else {
+                rootCmakeList.append(String.format("# add_subdirectory(%s)\n", path));
+            }
         }
         rootCmakeList.append("\n# test module\n");
         for (String path : testCMakeList) {
@@ -304,8 +308,8 @@ public class Generator {
             }
             build = build.substring(index + 1);
             build = build.replaceAll("\\|\\|", "");
-            build = build.replaceAll("cxx", "");
-            build = build.replaceAll("cc", "");
+            build = build.replaceAll(" cxx", "");
+            build = build.replaceAll(" cc", "");
 
             StringTokenizer st = new StringTokenizer(build);
             while (st.hasMoreTokens()) {
