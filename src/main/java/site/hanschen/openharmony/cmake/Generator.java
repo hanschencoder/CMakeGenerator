@@ -310,7 +310,7 @@ public class Generator {
             StringTokenizer st = new StringTokenizer(build);
             while (st.hasMoreTokens()) {
                 String src = st.nextToken();
-                if (src.endsWith(".cpp") || src.endsWith(".c")) {
+                if (isSourceFile(src)) {
                     srcFiles.add(new File(ninjaRoot.getParentFile().getCanonicalPath() + "/" + src));
                 }
             }
@@ -362,11 +362,15 @@ public class Generator {
         String getName();
     }
 
+    private static boolean isSourceFile(String filename) {
+        return filename.contains(".cpp") || filename.contains(".c") || filename.contains(".cc");
+    }
+
     private static class BuildParser implements LineParser {
 
         @Override
         public String parse(String line) {
-            if (line.startsWith("build ") && (line.contains(".cpp") || line.contains(".c"))) {
+            if (line.startsWith("build ") && isSourceFile(line)) {
                 return line;
             }
             return null;
