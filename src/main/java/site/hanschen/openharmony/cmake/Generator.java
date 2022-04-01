@@ -366,15 +366,19 @@ public class Generator {
         String getName();
     }
 
-    private static boolean isSourceFile(String filename) {
+    private static boolean containSourceFile(String filename) {
         return filename.contains(".cpp") || filename.contains(".c") || filename.contains(".cc");
+    }
+
+    private static boolean isSourceFile(String filename) {
+        return filename.endsWith(".cpp") || filename.endsWith(".c") || filename.endsWith(".cc");
     }
 
     private static class BuildParser implements LineParser {
 
         @Override
         public String parse(String line) {
-            if (line.startsWith("build ") && isSourceFile(line)) {
+            if (line.startsWith("build ") && containSourceFile(line)) {
                 return line;
             }
             return null;
